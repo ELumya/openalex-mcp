@@ -1,0 +1,23 @@
+[project]
+name = "mcp-openalex"
+version = "0.1.0"
+description = "FastMCP server exposing OpenAlex scholarly database to AI agents — search articles, authors, and institutions."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Lumya"}]
+requires-python = ">=3.12"
+keywords = ["mcp", "openalex", "scholarly", "research", "fastmcp", "llm"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "fastmcp>=3.0.2",
+    "markitdown>=0.1.5",
+    "pyalex>=0.21",
+]
+
+[project.urls]
+Repository = "https://github.com/ELumya/openalex-mcp"
