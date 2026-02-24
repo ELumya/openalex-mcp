@@ -171,11 +171,10 @@ def format_work_result(work: dict) -> dict:
 
     # Standardized open_access format
     open_access = work.get("open_access", {})
-    result["open_access"] = {
-        "is_oa": open_access.get("is_oa", False),
-        "oa_status": open_access.get("oa_status") if open_access.get("is_oa") else None,
-        "oa_url": open_access.get("oa_url") if open_access.get("is_oa") else None
-    }
+    if open_access.get("is_oa", False):
+        result["open_access_url"] = open_access.get("oa_url")
+    else:
+        result["is_open_access"] = False
 
     return result
 
