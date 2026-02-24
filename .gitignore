@@ -11,6 +11,3 @@ wheels/
 
 # Environment variables
 .env
-
-# llm files
-.llm
