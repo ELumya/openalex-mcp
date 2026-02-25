@@ -93,14 +93,11 @@ async def search_articles(
 async def fetch_article(
     work_id: Annotated[str, Field(min_length=1, description="OpenAlex Work ID or DOI")],
     include_abstract: Annotated[bool, Field(description="Include abstract in response")] = True,
-    fulltext: Annotated[str | None, Field(description="Full-text format: 'pdf', 'markdown', or 'llm_summary'")] = None,
-    prompt: Annotated[str | None, Field(description="LLM prompt (required for llm_summary)")] = None,
+    fulltext: Annotated[bool, Field(description="Include full-text content")] = False,
+    prompt: Annotated[str | None, Field(description="Optional LLM prompt for analysis (if provided, returns LLM summary; otherwise returns markdown)")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Fetch detailed article metadata and optional full-text content (PDF/Markdown)."""
-    if fulltext == "llm_summary" and not prompt:
-        raise ToolError("MISSING_PARAMETER", "prompt parameter is required when fulltext='llm_summary'")
-    
+    """Fetch detailed article metadata. If fulltext=True, returns markdown (or LLM summary if prompt provided)."""
     api_id = to_openalex_api_format(work_id)
     work = Works()[api_id]
     
@@ -123,19 +120,15 @@ async def fetch_article(
         if not work.get("open_access", {}).get("is_oa"):
             result["fulltext"] = {"is_open_access": False}
         else:
-            result["fulltext"] = await _process_fulltext(work, fulltext, prompt, ctx)
+            result["fulltext"] = await _process_fulltext(work, prompt, ctx)
     
     return result
 
 
-async def _process_fulltext(work, format: str, prompt: str | None, ctx: Context) -> dict | str:
-    """Process full-text content based on requested format."""
+async def _process_fulltext(work, prompt: str | None, ctx: Context) -> dict | str:
+    """Process full-text content. Returns markdown if no prompt, otherwise LLM summary."""
     try:
-        if format == "pdf":
-            await ctx.report_progress(50, 100, "Fetching PDF")
-            return work.pdf.get()
-        
-        # Get markdown for both markdown and llm_summary
+        # Fetch and convert PDF to markdown
         await ctx.report_progress(30, 100, "Fetching PDF")
         pdf_bytes = work.pdf.get()
         
@@ -143,7 +136,7 @@ async def _process_fulltext(work, format: str, prompt: str | None, ctx: Context)
         md = MarkItDown()
         article_text = md.convert_stream(io.BytesIO(pdf_bytes)).text_content
         
-        if format == "markdown":
+        if not prompt:
             await ctx.report_progress(100, 100, "Conversion complete")
             return article_text
         
@@ -190,7 +183,7 @@ Provide a clear, structured response."""
 # AUTHOR SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_authors(
-    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Author name or OpenAlex Author ID")],
+    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Author name (Elasticsearch syntax)")],
     affiliation: Annotated[str | None, Field(description="Institution name, ROR, or OpenAlex Institution ID")] = None,
     limit: Annotated[int, Field(ge=1, le=10000, description="Max results (1-10000)")] = 25,
     page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
@@ -200,8 +193,7 @@ async def search_authors(
 ) -> dict:
     """Search author profiles by name, ORCID, or affiliation. Returns metrics (works_count, affiliations)."""
     # Build base query
-    id_type, normalized = detect_id_type(query_string)
-    query = Authors().filter(openalex_id=normalized) if id_type == "openalex_author" else Authors().search(query_string)
+    query = Authors().search(query_string)
 
     # Apply filters
     if affiliation:
