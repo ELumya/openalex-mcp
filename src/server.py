@@ -40,7 +40,7 @@ pyalex.config.retry_http_codes = [429, 500, 503]
 # Initialize FastMCP server
 mcp = FastMCP(
     name="openalex",
-    instructions="""OpenAlex scholarly database MCP server.""",
+    instructions="""OpenAlex scholarly database. Search and fetch works, authors, and institutions.""",
     version="0.1.0"
 )
 
@@ -53,20 +53,20 @@ mcp.add_middleware(RetryMiddleware(max_retries=2, retry_exceptions=(ConnectionEr
 # ARTICLE SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_articles(
-    query_string: Annotated[str, Field(min_length=2, max_length=1000, description="Search query (Elasticsearch syntax)")],
-    institution: Annotated[str | None, Field(description="Institution name, ROR, or OpenAlex Institution ID")] = None,
-    publication_year: Annotated[int | None, Field(ge=1000, le=2100, description="Publication year (1000-2100)")] = None,
-    from_date: Annotated[str | None, Field(description="Start date (YYYY-MM-DD or YYYY)")] = None,
-    to_date: Annotated[str | None, Field(description="End date (YYYY-MM-DD or YYYY)")] = None,
-    type: Annotated[str | None, Field(description="Work type: 'article', 'review', 'proceedings-article', etc.")] = None,
-    limit: Annotated[int, Field(ge=1, le=200, description="Max results (1-200)")] = 20,
-    page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
-    peer_reviewed_only: Annotated[bool, Field(description="Filter peer-reviewed only")] = False,
-    search_range: Annotated[str, Field(description="Search scope: 'general', 'title', 'abstract', 'title_abstract'")] = "title_abstract",
-    sort: Annotated[str | None, Field(description="Sort: 'field:direction' (e.g. 'publication_year:desc')")] = None,
+    query_string: Annotated[str, Field(min_length=2, max_length=1000, description="Keywords or Elasticsearch query")],
+    institution: Annotated[str | None, Field(description="Institution name or ID")] = None,
+    publication_year: Annotated[int | None, Field(ge=1000, le=2100, description="Filter by year")] = None,
+    from_date: Annotated[str | None, Field(description="Start date (YYYY or YYYY-MM-DD)")] = None,
+    to_date: Annotated[str | None, Field(description="End date (YYYY or YYYY-MM-DD)")] = None,
+    type: Annotated[str | None, Field(description="article, review, proceedings-article, …")] = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 20,
+    page: Annotated[int, Field(ge=1)] = 1,
+    peer_reviewed_only: Annotated[bool, Field()] = False,
+    search_range: Annotated[str, Field(description="title_abstract (default), title, abstract, general")] = "title_abstract",
+    sort: Annotated[str | None, Field(description="field:asc|desc, e.g. publication_year:desc")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Search OpenAlex articles with filters and ranking. Returns minimal data for quick scanning."""
+    """Search works in OpenAlex by keyword, filtered by institution, date, type, and more."""
     query = await build_works_query(
         query_string=query_string,
         search_range=search_range,
@@ -95,16 +95,13 @@ async def search_articles(
 # FETCH ARTICLE TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def fetch_article(
-    work_id: Annotated[str, Field(min_length=1, description="OpenAlex Work ID or DOI")],
-    include_abstract: Annotated[bool, Field(description="Include abstract in response")] = True,
-    fulltext: Annotated[bool, Field(description="Include full-text content")] = False,
-    prompt: Annotated[str | None, Field(description="Optional LLM prompt for analysis (if provided, returns LLM summary; otherwise returns markdown)")] = None,
+    work_id: Annotated[str, Field(min_length=1, description="OpenAlex W…, DOI, pmid:, pmcid:, or mag:")],
+    include_abstract: Annotated[bool, Field()] = True,
+    fulltext: Annotated[bool, Field(description="Fetch open-access PDF as markdown")] = False,
+    prompt: Annotated[str | None, Field(description="If set, returns an LLM summary of the full text instead of raw markdown")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Fetch detailed article metadata. If fulltext=True, returns markdown (or LLM summary if prompt provided).
-    
-    work_id accepts: OpenAlex ID (W...), DOI, PubMed ID (pmid:...), PubMed Central ID (pmcid:...), MAG ID (mag:...).
-    """
+    """Fetch complete metadata for one work. Set fulltext=True to retrieve the open-access PDF as markdown, or pass a prompt to get an LLM summary instead."""
     api_id = normalize_id(work_id)
     if api_id is None:
         raise ToolError("INVALID_WORK_ID", f"'{work_id}' is not a recognised work ID. Provide an OpenAlex ID (W…), DOI, pmid:, pmcid:, or mag:.")
@@ -192,15 +189,15 @@ Provide a clear, structured response."""
 # AUTHOR SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_authors(
-    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Author name (Elasticsearch syntax)")],
-    institution: Annotated[str | None, Field(description="Institution name, ROR, or OpenAlex Institution ID")] = None,
-    limit: Annotated[int, Field(ge=1, le=10000, description="Max results (1-10000)")] = 25,
-    page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
-    min_works_count: Annotated[int | None, Field(ge=0, description="Minimum works count")] = None,
-    sort: Annotated[str | None, Field(description="Sort: 'field:direction'")] = None,
+    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Author name")],
+    institution: Annotated[str | None, Field(description="Institution name or ID")] = None,
+    limit: Annotated[int, Field(ge=1, le=10000)] = 25,
+    page: Annotated[int, Field(ge=1)] = 1,
+    min_works_count: Annotated[int | None, Field(ge=0)] = None,
+    sort: Annotated[str | None, Field(description="field:asc|desc")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Search author profiles by name or affiliation. Returns metrics (works_count, affiliations)."""
+    """Search author profiles by name, optionally filtered by institution."""
     # Build base query
     query = Authors().search(query_string)
 
@@ -230,13 +227,13 @@ async def search_authors(
 
 @mcp.tool(annotations={"readOnlyHint": True})
 async def get_author_articles(
-    author_id: Annotated[str, Field(min_length=1, description="Author ID: OpenAlex (A...) or ORCID. Use search_authors to find IDs by name.")],
-    limit: Annotated[int, Field(ge=1, le=200, description="Max results (1-200)")] = 25,
-    page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
-    sort: Annotated[str | None, Field(description="Sort: 'field:direction'")] = None,
+    author_id: Annotated[str, Field(min_length=1, description="OpenAlex A…, orcid:, scopus:, … — use search_authors to find")],
+    limit: Annotated[int, Field(ge=1, le=200)] = 25,
+    page: Annotated[int, Field(ge=1)] = 1,
+    sort: Annotated[str | None, Field(description="field:asc|desc")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Get all publications by a specific author. Requires an author ID — use search_authors to find IDs by name."""
+    """List all works by a given author."""
     api_id = normalize_id(author_id)
     if api_id is None or (not api_id.startswith("A") and not api_id.startswith("orcid:")):
         raise ToolError(
@@ -266,15 +263,15 @@ async def get_author_articles(
 # INSTITUTION SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_institutions(
-    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Institution name (Elasticsearch syntax)")],
-    country_code: Annotated[str | None, Field(description="Country code (e.g., 'US', 'FR')")] = None,
-    institution_type: Annotated[str | None, Field(description="Type: education, healthcare, company, etc.")] = None,
-    limit: Annotated[int, Field(ge=1, le=10000, description="Max results (1-10000)")] = 25,
-    page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
-    sort: Annotated[str | None, Field(description="Sort: 'field:direction'")] = None,
+    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Institution name")],
+    country_code: Annotated[str | None, Field(description="ISO country code, e.g. US, FR")] = None,
+    institution_type: Annotated[str | None, Field(description="education, healthcare, company, …")] = None,
+    limit: Annotated[int, Field(ge=1, le=10000)] = 25,
+    page: Annotated[int, Field(ge=1)] = 1,
+    sort: Annotated[str | None, Field(description="field:asc|desc")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Search institutions by name with filters."""
+    """Search institutions by name, optionally filtered by country or type."""
     query = Institutions().search(query_string)
     
     if country_code:
@@ -302,10 +299,10 @@ async def search_institutions(
 # FETCH AUTHOR TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def fetch_author(
-    author_id: Annotated[str, Field(min_length=1, description="Author ID: OpenAlex (A...) or ORCID")],
+    author_id: Annotated[str, Field(min_length=1, description="OpenAlex A…, orcid:, scopus:, twitter:, or wikipedia:")],
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Fetch detailed author profile by OpenAlex ID or ORCID."""
+    """Fetch full author profile including topics and institutions."""
     api_id = normalize_id(author_id)
     if api_id is None:
         raise ToolError("INVALID_AUTHOR_ID", f"'{author_id}' is not a recognised author ID. Provide an OpenAlex ID (A…) or ORCID.")
@@ -316,10 +313,10 @@ async def fetch_author(
 # FETCH INSTITUTION TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def fetch_institution(
-    institution_id: Annotated[str, Field(min_length=1, description="Institution ID: OpenAlex (I...) or ROR")],
+    institution_id: Annotated[str, Field(min_length=1, description="OpenAlex I…, ror:, mag:, or wikidata:")],
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Fetch detailed institution profile by OpenAlex ID or ROR."""
+    """Fetch full institution profile."""
     api_id = normalize_id(institution_id)
     if api_id is None:
         raise ToolError("INVALID_INSTITUTION_ID", f"'{institution_id}' is not a recognised institution ID. Provide an OpenAlex ID (I…) or ROR.")
