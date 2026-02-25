@@ -77,7 +77,7 @@ async def search_articles(
     )
     
     results = query.select([
-        "id", "doi", "title", "publication_year", "open_access"
+        "id", "doi", "title", "publication_year", "open_access", "authorships", "primary_topic"
     ]).get(page=page, per_page=limit)
     
     return {

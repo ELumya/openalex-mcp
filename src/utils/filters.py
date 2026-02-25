@@ -176,6 +176,24 @@ def format_work_result(work: dict) -> dict:
     else:
         result["is_open_access"] = False
 
+    # Include primary topic if available
+    if "primary_topic" in work:
+        result["primary_topic"] = {
+            "id": work["primary_topic"].get("id"),
+            "name": work["primary_topic"].get("display_name")
+        }
+
+    # Include 3 first authors if available
+    authorships = work.get("authorships", [])
+    if authorships:
+        result["authors"] = [
+            {
+                "id": authorship.get("author", {}).get("id"),
+                "display_name": authorship.get("author", {}).get("display_name")
+            }
+            for authorship in authorships[:3]
+        ]
+
     return result
 
 
