@@ -17,13 +17,11 @@ from markitdown import MarkItDown
 import pyalex
 
 # Import utilities
-from utils.normalizers import validate_work_id, validate_orcid, detect_id_type, normalize_openalex_id, to_openalex_api_format
+from utils.normalizers import normalize_id, id_to_filter_dict
 from utils.filters import (
     build_works_query, format_work_result, format_author_result,
-    format_institution_result, apply_affiliation_filter
+    format_institution_result, apply_institution_filter
 )
-from utils.author import get_first_author_id
-from utils.institution import get_first_institution_id
 
 # Configure OpenAlex API key (REQUIRED as of Feb 13, 2026)
 api_key = os.getenv("OPENALEX_API_KEY")
@@ -46,6 +44,11 @@ mcp = FastMCP(
     version="0.1.0"
 )
 
+# Middleware: catch all unhandled errors, retry transient network failures
+from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, RetryMiddleware
+mcp.add_middleware(ErrorHandlingMiddleware(include_traceback=False, transform_errors=True))
+mcp.add_middleware(RetryMiddleware(max_retries=2, retry_exceptions=(ConnectionError, TimeoutError)))
+
 
 # ARTICLE SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
@@ -64,7 +67,7 @@ async def search_articles(
     ctx: Context = CurrentContext()
 ) -> dict:
     """Search OpenAlex articles with filters and ranking. Returns minimal data for quick scanning."""
-    query = build_works_query(
+    query = await build_works_query(
         query_string=query_string,
         search_range=search_range,
         institution=institution,
@@ -73,7 +76,8 @@ async def search_articles(
         to_date=to_date,
         type=type,
         peer_reviewed_only=peer_reviewed_only,
-        sort=sort
+        sort=sort,
+        ctx=ctx
     )
     
     results = query.select([
@@ -97,8 +101,13 @@ async def fetch_article(
     prompt: Annotated[str | None, Field(description="Optional LLM prompt for analysis (if provided, returns LLM summary; otherwise returns markdown)")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Fetch detailed article metadata. If fulltext=True, returns markdown (or LLM summary if prompt provided)."""
-    api_id = to_openalex_api_format(work_id)
+    """Fetch detailed article metadata. If fulltext=True, returns markdown (or LLM summary if prompt provided).
+    
+    work_id accepts: OpenAlex ID (W...), DOI, PubMed ID (pmid:...), PubMed Central ID (pmcid:...), MAG ID (mag:...).
+    """
+    api_id = normalize_id(work_id)
+    if api_id is None:
+        raise ToolError("INVALID_WORK_ID", f"'{work_id}' is not a recognised work ID. Provide an OpenAlex ID (W…), DOI, pmid:, pmcid:, or mag:.")
     work = Works()[api_id]
     
     result = {
@@ -117,7 +126,7 @@ async def fetch_article(
         result["abstract"] = work.get("abstract")
     
     if fulltext:
-        if not work.get("open_access", {}).get("is_oa"):
+        if not work.get("open_access", {}).get("is_oa", False):
             result["fulltext"] = {"is_open_access": False}
         else:
             result["fulltext"] = await _process_fulltext(work, prompt, ctx)
@@ -184,20 +193,20 @@ Provide a clear, structured response."""
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_authors(
     query_string: Annotated[str, Field(min_length=2, max_length=500, description="Author name (Elasticsearch syntax)")],
-    affiliation: Annotated[str | None, Field(description="Institution name, ROR, or OpenAlex Institution ID")] = None,
+    institution: Annotated[str | None, Field(description="Institution name, ROR, or OpenAlex Institution ID")] = None,
     limit: Annotated[int, Field(ge=1, le=10000, description="Max results (1-10000)")] = 25,
     page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
     min_works_count: Annotated[int | None, Field(ge=0, description="Minimum works count")] = None,
     sort: Annotated[str | None, Field(description="Sort: 'field:direction'")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Search author profiles by name, ORCID, or affiliation. Returns metrics (works_count, affiliations)."""
+    """Search author profiles by name or affiliation. Returns metrics (works_count, affiliations)."""
     # Build base query
     query = Authors().search(query_string)
 
     # Apply filters
-    if affiliation:
-        query = apply_affiliation_filter(query, affiliation)
+    if institution:
+        query = await apply_institution_filter(query, institution, "authors", ctx=ctx)
     
     if min_works_count is not None:
         query = query.filter(works_count=f">{min_works_count}")
@@ -221,24 +230,23 @@ async def search_authors(
 
 @mcp.tool(annotations={"readOnlyHint": True})
 async def get_author_articles(
-    author: Annotated[str, Field(min_length=1, description="Author name or OpenAlex ID")],
+    author_id: Annotated[str, Field(min_length=1, description="Author ID: OpenAlex (A...) or ORCID. Use search_authors to find IDs by name.")],
     limit: Annotated[int, Field(ge=1, le=200, description="Max results (1-200)")] = 25,
     page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
     sort: Annotated[str | None, Field(description="Sort: 'field:direction'")] = None,
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Get all publications by a specific author."""
-    # Resolve author ID
-    id_type, normalized = detect_id_type(author)
-    if id_type == "openalex_author":
-        author_id = normalized
-    else:
-        author_id = get_first_author_id(author)
-        if not author_id:
-            raise ToolError("AUTHOR_NOT_FOUND", f"No author found matching: {author}")
-    
+    """Get all publications by a specific author. Requires an author ID — use search_authors to find IDs by name."""
+    api_id = normalize_id(author_id)
+    if api_id is None or (not api_id.startswith("A") and not api_id.startswith("orcid:")):
+        raise ToolError(
+            "INVALID_AUTHOR_ID",
+            f"'{author_id}' is not a valid author ID. Provide an OpenAlex ID (A…) or ORCID. "
+            "Use search_authors to find author IDs by name."
+        )
+    works_query = Works().filter(author=id_to_filter_dict(api_id))
+
     # Fetch articles
-    works_query = Works().filter(author={"id": author_id})
     if sort:
         field, _, direction = sort.partition(":")
         works_query = works_query.sort(**{field: direction or "desc"})
@@ -294,11 +302,13 @@ async def search_institutions(
 # FETCH AUTHOR TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def fetch_author(
-    author_id: Annotated[str, Field(min_length=1, description="OpenAlex Author ID or ORCID")],
+    author_id: Annotated[str, Field(min_length=1, description="Author ID: OpenAlex (A...) or ORCID")],
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Fetch detailed author profile by ID or ORCID."""
-    api_id = to_openalex_api_format(author_id)
+    """Fetch detailed author profile by OpenAlex ID or ORCID."""
+    api_id = normalize_id(author_id)
+    if api_id is None:
+        raise ToolError("INVALID_AUTHOR_ID", f"'{author_id}' is not a recognised author ID. Provide an OpenAlex ID (A…) or ORCID.")
     author = Authors()[api_id]
     return format_author_result(author)
 
@@ -306,11 +316,13 @@ async def fetch_author(
 # FETCH INSTITUTION TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def fetch_institution(
-    institution_id: Annotated[str, Field(min_length=1, description="OpenAlex Institution ID or ROR")],
+    institution_id: Annotated[str, Field(min_length=1, description="Institution ID: OpenAlex (I...) or ROR")],
     ctx: Context = CurrentContext()
 ) -> dict:
-    """Fetch detailed institution profile by ID or ROR."""
-    api_id = to_openalex_api_format(institution_id)
+    """Fetch detailed institution profile by OpenAlex ID or ROR."""
+    api_id = normalize_id(institution_id)
+    if api_id is None:
+        raise ToolError("INVALID_INSTITUTION_ID", f"'{institution_id}' is not a recognised institution ID. Provide an OpenAlex ID (I…) or ROR.")
     institution = Institutions()[api_id]
     return format_institution_result(institution)
 

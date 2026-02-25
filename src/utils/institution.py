@@ -1,52 +1,67 @@
 """Institution-related utility functions for OpenAlex MCP server."""
 
 from pyalex import Institutions
+from fastmcp.exceptions import ToolError
+from fastmcp.server.context import Context
+from .normalizers import normalize_id
 
 
-def get_institution_ids_by_name(name: str, limit: int = 5) -> list[str]:
-    """Search institutions by name and return OpenAlex IDs.
+async def resolve_institution_id(name_or_id: str, ctx: Context | None = None) -> str:
+    """Resolve an institution name or external ID to an OpenAlex Institution ID.
 
-    Uses fuzzy search to find institutions matching the given name.
-    Returns a list of OpenAlex institution IDs (or ROR IDs when available).
-
-    Args:
-        name: Institution name or partial name to search for
-        limit: Maximum number of results to return (default: 5)
-
-    Returns:
-        List of institution IDs (ROR preferred, OpenAlex ID as fallback)
-        Returns empty list if no matches found or on error
-    """
-    try:
-        # Search institutions using pyalex
-        results = Institutions().search(name).select([
-            "id", "ror"
-        ]).get(per_page=limit)
-
-        # Extract IDs, preferring ROR over OpenAlex ID
-        ids = []
-        for inst in results:
-            institution_id = inst.get("ror") or inst.get("id")
-            if institution_id:
-                ids.append(institution_id)
-
-        return ids
-
-    except Exception:
-        # Return empty list on any error
-        return []
-
-
-def get_first_institution_id(name: str) -> str | None:
-    """Get the first (most relevant) institution ID for a given name.
-
-    Convenience function that returns only the top result from institution search.
+    - Known external IDs (OpenAlex I..., ROR) are passed through directly.
+    - Name queries trigger a fuzzy search. If multiple matches are found and
+      ctx is available, the user is prompted to pick one via elicitation.
+    - Fallback: returns the first (most relevant) search result.
 
     Args:
-        name: Institution name or partial name to search for
+        name_or_id: Institution name or external ID (OpenAlex, ROR)
+        ctx: FastMCP context for elicitation (optional)
 
     Returns:
-        Institution ID (ROR or OpenAlex) or None if not found
+        OpenAlex Institution ID ready for use in API calls
+
+    Raises:
+        ToolError: If no institution is found matching the name
     """
-    ids = get_institution_ids_by_name(name, limit=1)
-    return ids[0] if ids else None
+    api_id = normalize_id(name_or_id)
+
+    # Known external ID → pass directly without a search
+    if api_id is not None:
+        return api_id
+
+    # Fuzzy name search
+    results = Institutions().search(name_or_id).select([
+        "id", "display_name", "country_code", "type", "works_count"
+    ]).get(per_page=5)
+
+    if not results:
+        raise ToolError("INSTITUTION_NOT_FOUND", f"No institution found matching: {name_or_id}")
+
+    if len(results) == 1:
+        return normalize_id(results[0]["id"]) or results[0]["id"]
+
+    # Multiple results → try elicitation
+    if ctx is not None:
+        try:
+            options = {}
+            for inst in results:
+                parts = [p for p in [
+                    inst.get("country_code"),
+                    inst.get("type"),
+                    f"{inst.get('works_count', 0)} works"
+                ] if p]
+                options[inst["id"]] = {"title": f"{inst['display_name']} — {'; '.join(parts)}"}
+
+            from fastmcp.server.elicitation import AcceptedElicitation
+            result = await ctx.elicit(
+                f"Multiple institutions match '{name_or_id}'. Please select one:",
+                response_type=options,
+            )
+            if isinstance(result, AcceptedElicitation):
+                return result.data
+        except Exception:
+            pass  # Fall through to first result
+
+    # Fallback: first (most relevant) result
+    return results[0]["id"]

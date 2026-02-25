@@ -7,11 +7,8 @@ This package provides helper functions for:
 """
 
 from utils.normalizers import (
-    validate_work_id,
-    validate_orcid,
-    detect_id_type,
-    normalize_openalex_id,
-    to_openalex_api_format
+    normalize_id,
+    id_to_filter_dict,
 )
 
 from utils.filters import (
@@ -19,29 +16,24 @@ from utils.filters import (
     format_work_result,
     format_author_result,
     format_institution_result,
-    apply_affiliation_filter
+    apply_institution_filter
 )
 
-from utils.author import get_author_ids_by_name, get_first_author_id
-from utils.institution import get_institution_ids_by_name, get_first_institution_id
+from utils.author import resolve_author_id
+from utils.institution import resolve_institution_id
 
 __all__ = [
     # Normalizers
-    "validate_work_id",
-    "validate_orcid",
-    "detect_id_type",
-    "normalize_openalex_id",
-    "to_openalex_api_format",
+    "normalize_id",
+    "id_to_filter_dict",
     # Filters
     "build_works_query",
     "format_work_result",
     "format_author_result",
     "format_institution_result",
-    "apply_affiliation_filter",
+    "apply_institution_filter",
     # Author utilities
-    "get_author_ids_by_name",
-    "get_first_author_id",
+    "resolve_author_id",
     # Institution utilities
-    "get_institution_ids_by_name",
-    "get_first_institution_id",
+    "resolve_institution_id",
 ]

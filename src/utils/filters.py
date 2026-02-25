@@ -7,83 +7,52 @@ This module provides functions to:
 """
 
 from fastmcp.exceptions import ToolError
+from fastmcp.server.context import Context
 from pyalex import Works, Authors, Institutions
-from .normalizers import detect_id_type
-from .institution import get_first_institution_id
-from .author import get_first_author_id
+from .normalizers import normalize_id, id_to_filter_dict
+from .institution import resolve_institution_id
+from .author import resolve_author_id
 
 
-def apply_institution_filter(query, institution: str, use_lineage: bool = True):
-    """Apply institution filter to a Works query.
+async def apply_institution_filter(
+    query,
+    institution: str,
+    filter_scope: str = "works",
+    use_lineage: bool = True,
+    ctx: Context | None = None
+):
+    """Apply institution filter to a Works or Authors query.
 
     Args:
-        query: PyAlex Works query object
+        query: PyAlex query object (Works or Authors)
         institution: Institution name, ROR ID, or OpenAlex ID
-        use_lineage: Whether to include child institutions (default True)
+        filter_scope: "works" → filters ``authorships.institutions``;
+                      "authors" → filters ``last_known_institutions``
+        use_lineage: Include child institutions (default True, OpenAlex IDs only)
+        ctx: FastMCP context for elicitation when resolving names (optional)
 
     Returns:
         Filtered query object
 
     Raises:
-        ToolError: If institution not found (code: INSTITUTION_NOT_FOUND)
+        ToolError: If institution not found
     """
-    id_type, normalized_id = detect_id_type(institution)
-    
-    if id_type == "openalex_institution":
-        # OpenAlex IDs support lineage filter (includes child institutions)
-        filter_key = "lineage" if use_lineage else "id"
-        return query.filter(authorships={"institutions": {filter_key: normalized_id}})
-    
-    elif id_type == "ror":
-        # OpenAlex natively supports ROR filtering on authorships
-        return query.filter(authorships={"institutions": {"ror": normalized_id}})
-    
+    api_id = normalize_id(institution)
+
+    if api_id is None:
+        # Free-text name → resolve (with optional elicitation) then recurse
+        resolved = await resolve_institution_id(institution, ctx)
+        return await apply_institution_filter(query, resolved, filter_scope, use_lineage, ctx)
+
+    filter_dict = id_to_filter_dict(api_id, lineage=use_lineage)
+
+    if filter_scope == "works":
+        return query.filter(authorships={"institutions": filter_dict})
     else:
-        # Name search - resolve to ID
-        institution_id = get_first_institution_id(institution)
-        if not institution_id:
-            raise ToolError("INSTITUTION_NOT_FOUND", f"No institution found matching: {institution}")
-        
-        # Recurse with resolved ID
-        return apply_institution_filter(query, institution_id, use_lineage)
+        return query.filter(last_known_institutions=filter_dict)
 
 
-def apply_affiliation_filter(query, affiliation: str, use_lineage: bool = True):
-    """Apply affiliation filter to an Authors query.
-
-    Args:
-        query: PyAlex Authors query object
-        affiliation: Institution name, ROR ID, or OpenAlex ID
-        use_lineage: Whether to include child institutions (default True)
-
-    Returns:
-        Filtered query object
-
-    Raises:
-        ToolError: If institution not found (code: INSTITUTION_NOT_FOUND)
-    """
-    id_type, normalized_id = detect_id_type(affiliation)
-    
-    if id_type == "openalex_institution":
-        # OpenAlex IDs support lineage filter (includes child institutions)
-        filter_key = "lineage" if use_lineage else "id"
-        return query.filter(last_known_institutions={filter_key: normalized_id})
-    
-    elif id_type == "ror":
-        # OpenAlex natively supports ROR filtering on last_known_institutions
-        return query.filter(last_known_institutions={"ror": normalized_id})
-    
-    else:
-        # Name search
-        institution_id = get_first_institution_id(affiliation)
-        if not institution_id:
-            raise ToolError("INSTITUTION_NOT_FOUND", f"No institution found: {affiliation}")
-        
-        # Recurse with resolved ID
-        return apply_affiliation_filter(query, institution_id, use_lineage)
-
-
-def build_works_query(
+async def build_works_query(
     query_string: str,
     search_range: str = "title_abstract",
     institution: str | None = None,
@@ -93,7 +62,8 @@ def build_works_query(
     type: str | None = None,
     peer_reviewed_only: bool = False,
     author: str | None = None,
-    sort: str | None = None
+    sort: str | None = None,
+    ctx: Context | None = None
 ):
     """Build a Works query with filters and sorting.
 
@@ -108,6 +78,7 @@ def build_works_query(
         peer_reviewed_only: Filter for peer-reviewed content only
         author: Author filter (name or OpenAlex ID)
         sort: Sort string in "field:direction" format (e.g., "publication_year:desc")
+        ctx: FastMCP context for elicitation when resolving names (optional)
 
     Returns:
         Configured PyAlex Works query
@@ -116,47 +87,47 @@ def build_works_query(
         ToolError: If author or institution not found
     """
     # Build base query based on search range
-    query = {
-        "title_abstract": lambda: Works().filter(**{"title_and_abstract.search": query_string}),
-        "title": lambda: Works().search_filter(title=query_string),
-        "abstract": lambda: Works().search_filter(abstract=query_string),
-        "general": lambda: Works().search(query_string)
-    }[search_range]()
-    
+    if search_range == "title_abstract":
+        query = Works().filter(**{"title_and_abstract.search": query_string})
+    elif search_range == "title":
+        query = Works().search_filter(title=query_string)
+    elif search_range == "abstract":
+        query = Works().search_filter(abstract=query_string)
+    else:
+        query = Works().search(query_string)
+
     # Apply filters
     if peer_reviewed_only:
         query = query.filter(is_paratext=False, type="article")
-    
+
     if publication_year:
         query = query.filter(publication_year=publication_year)
-    
+
     if from_date:
         query = query.filter(from_publication_date=from_date)
-    
+
     if to_date:
         query = query.filter(to_publication_date=to_date)
-    
+
     if type:
         query = query.filter(type=type)
-    
+
     if institution:
-        query = apply_institution_filter(query, institution)
-    
+        query = await apply_institution_filter(query, institution, "works", ctx=ctx)
+
     if author:
-        id_type, normalized_id = detect_id_type(author)
-        if id_type == "openalex_author":
-            author_id = normalized_id
+        api_id = normalize_id(author)
+        if api_id is not None:
+            query = query.filter(author=id_to_filter_dict(api_id))
         else:
-            author_id = get_first_author_id(author)
-            if not author_id:
-                raise ToolError("AUTHOR_NOT_FOUND", f"No author found matching: {author}")
-        
-        query = query.filter(author={"id": author_id})
-    
+            # Free-text name → resolve to OpenAlex A-ID
+            author_openalex_id = await resolve_author_id(author, ctx)
+            query = query.filter(author={"id": author_openalex_id})
+
     if sort:
         field, _, direction = sort.partition(":")
         query = query.sort(**{field: direction or "desc"})
-    
+
     return query
 
 
