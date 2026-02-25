@@ -121,7 +121,7 @@ async def fetch_article(
     
     if fulltext:
         if not work.get("open_access", {}).get("is_oa"):
-            result["fulltext"] = {"is_openaccess": False}
+            result["fulltext"] = {"is_open_access": False}
         else:
             result["fulltext"] = await _process_fulltext(work, fulltext, prompt, ctx)
     
