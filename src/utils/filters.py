@@ -84,7 +84,7 @@ def apply_affiliation_filter(query, affiliation: str, use_lineage: bool = True):
 
 
 def build_works_query(
-    search_query: str,
+    query_string: str,
     search_range: str = "title_abstract",
     institution: str | None = None,
     publication_year: int | None = None,
@@ -98,7 +98,7 @@ def build_works_query(
     """Build a Works query with filters and sorting.
 
     Args:
-        search_query: Search query string
+        query_string: Search query string
         search_range: Search scope ('title_abstract', 'title', 'abstract', 'general')
         institution: Institution filter (name, ROR, or OpenAlex ID)
         publication_year: Publication year filter
@@ -117,10 +117,10 @@ def build_works_query(
     """
     # Build base query based on search range
     query = {
-        "title_abstract": lambda: Works().filter(**{"title_and_abstract.search": search_query}),
-        "title": lambda: Works().search_filter(title=search_query),
-        "abstract": lambda: Works().search_filter(abstract=search_query),
-        "general": lambda: Works().search(search_query)
+        "title_abstract": lambda: Works().filter(**{"title_and_abstract.search": query_string}),
+        "title": lambda: Works().search_filter(title=query_string),
+        "abstract": lambda: Works().search_filter(abstract=query_string),
+        "general": lambda: Works().search(query_string)
     }[search_range]()
     
     # Apply filters

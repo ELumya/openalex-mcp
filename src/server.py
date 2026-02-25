@@ -50,7 +50,7 @@ mcp = FastMCP(
 # ARTICLE SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_articles(
-    search_query: Annotated[str, Field(min_length=2, max_length=1000, description="Search query (Elasticsearch syntax, no wildcards)")],
+    query_string: Annotated[str, Field(min_length=2, max_length=1000, description="Search query (Elasticsearch syntax)")],
     institution: Annotated[str | None, Field(description="Institution name, ROR, or OpenAlex Institution ID")] = None,
     publication_year: Annotated[int | None, Field(ge=1000, le=2100, description="Publication year (1000-2100)")] = None,
     from_date: Annotated[str | None, Field(description="Start date (YYYY-MM-DD or YYYY)")] = None,
@@ -65,7 +65,7 @@ async def search_articles(
 ) -> dict:
     """Search OpenAlex articles with filters and ranking. Returns minimal data for quick scanning."""
     query = build_works_query(
-        search_query=search_query,
+        query_string=query_string,
         search_range=search_range,
         institution=institution,
         publication_year=publication_year,
@@ -190,7 +190,7 @@ Provide a clear, structured response."""
 # AUTHOR SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_authors(
-    search_query: Annotated[str, Field(min_length=2, max_length=500, description="Author name or OpenAlex Author ID")],
+    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Author name or OpenAlex Author ID")],
     affiliation: Annotated[str | None, Field(description="Institution name, ROR, or OpenAlex Institution ID")] = None,
     limit: Annotated[int, Field(ge=1, le=10000, description="Max results (1-10000)")] = 25,
     page: Annotated[int, Field(ge=1, description="Page number for pagination")] = 1,
@@ -200,8 +200,8 @@ async def search_authors(
 ) -> dict:
     """Search author profiles by name, ORCID, or affiliation. Returns metrics (works_count, affiliations)."""
     # Build base query
-    id_type, normalized = detect_id_type(search_query)
-    query = Authors().filter(openalex_id=normalized) if id_type == "openalex_author" else Authors().search(search_query)
+    id_type, normalized = detect_id_type(query_string)
+    query = Authors().filter(openalex_id=normalized) if id_type == "openalex_author" else Authors().search(query_string)
 
     # Apply filters
     if affiliation:
@@ -266,7 +266,7 @@ async def get_author_articles(
 # INSTITUTION SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def search_institutions(
-    search_query: Annotated[str, Field(min_length=2, max_length=500, description="Institution name (Elasticsearch syntax, no wildcards)")],
+    query_string: Annotated[str, Field(min_length=2, max_length=500, description="Institution name (Elasticsearch syntax)")],
     country_code: Annotated[str | None, Field(description="Country code (e.g., 'US', 'FR')")] = None,
     institution_type: Annotated[str | None, Field(description="Type: education, healthcare, company, etc.")] = None,
     limit: Annotated[int, Field(ge=1, le=10000, description="Max results (1-10000)")] = 25,
@@ -275,7 +275,7 @@ async def search_institutions(
     ctx: Context = CurrentContext()
 ) -> dict:
     """Search institutions by name with filters."""
-    query = Institutions().search(search_query)
+    query = Institutions().search(query_string)
     
     if country_code:
         query = query.filter(country_code=country_code.upper())
