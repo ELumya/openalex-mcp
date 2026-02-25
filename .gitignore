@@ -14,3 +14,7 @@ wheels/
 
 # UV files
 uv.lock
+
+# LLM files
+.llms
+.github/copilot-instructions.md
