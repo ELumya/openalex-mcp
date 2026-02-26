@@ -10,15 +10,28 @@ This module provides functions to:
 
 from typing import Literal
 
-from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 from pyalex import Works, Authors, Institutions
 from .normalizers import normalize_id, id_to_filter_dict
-from .institution import resolve_institution_id
-from .author import resolve_author_id
+from .resolver import resolve_institution_id, resolve_author_id
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
+
+def apply_sort(query, sort: str):
+    """Apply a ``field:direction`` sort string to a PyAlex query.
+
+    Args:
+        query: PyAlex query object.
+        sort: Sort string in ``"field:asc|desc"`` format.  Direction defaults
+            to ``"desc"`` when omitted.
+
+    Returns:
+        Query with the sort applied.
+    """
+    field, _, direction = sort.partition(":")
+    return query.sort(**{field: direction or "desc"})
+
 
 def _format_topic(topic: dict) -> dict:
     """Serialize a topic object to {id, name, subfield}."""
@@ -140,8 +153,7 @@ async def build_works_query(
             query = query.filter(author={"id": author_openalex_id})
 
     if sort:
-        field, _, direction = sort.partition(":")
-        query = query.sort(**{field: direction or "desc"})
+        query = apply_sort(query, sort)
 
     return query
 
@@ -236,7 +248,8 @@ def format_work_result(work: dict, detail: Literal["low", "medium"] = "low") -> 
                     "institutions": [
                         {
                             "display_name": inst.get("display_name"),
-                            "id": inst.get("ror") or inst.get("id"),
+                            "id": inst.get("id"),
+                            "ror": inst.get("ror"),
                         }
                         for inst in (a.get("institutions") or [])
                     ],
@@ -255,7 +268,8 @@ def format_institution_result(inst: dict, detail: Literal["low", "medium"] = "lo
         detail: ``"low"`` (compact) or ``"medium"`` (richer, for fetch_institution).
     """
     result = {
-        "id": inst.get("ror") or inst.get("id"),
+        "id": inst.get("id"),
+        "ror": inst.get("ror"),
         "display_name": inst.get("display_name"),
         "country_code": inst.get("country_code"),
         "type": inst.get("type"),
@@ -341,8 +355,8 @@ def format_author_result(author: dict, detail: Literal["low", "medium"] = "low")
                     {
                         "institution": {
                             "display_name": (aff.get("institution", {})).get("display_name"),
-                            "id": (aff.get("institution", {})).get("ror")
-                                  or (aff.get("institution", {})).get("id"),
+                            "id": (aff.get("institution", {})).get("id"),
+                            "ror": (aff.get("institution", {})).get("ror"),
                         },
                         "years": sorted(aff.get("years", []), reverse=True),
                     }

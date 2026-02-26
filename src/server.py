@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
+from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, RetryMiddleware
 from pydantic import Field
 from pyalex import Works, Authors, Institutions
 from markitdown import MarkItDown
@@ -20,7 +21,7 @@ import pyalex
 from utils.normalizers import normalize_id, id_to_filter_dict
 from utils.filters import (
     build_works_query, format_work_result, format_author_result,
-    format_institution_result, apply_institution_filter
+    format_institution_result, apply_institution_filter, apply_sort
 )
 
 # Configure OpenAlex API key (REQUIRED as of Feb 13, 2026)
@@ -45,7 +46,6 @@ mcp = FastMCP(
 )
 
 # Middleware: catch all unhandled errors, retry transient network failures
-from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, RetryMiddleware
 mcp.add_middleware(ErrorHandlingMiddleware(include_traceback=False, transform_errors=True))
 mcp.add_middleware(RetryMiddleware(max_retries=2, retry_exceptions=(ConnectionError, TimeoutError)))
 
@@ -199,9 +199,8 @@ async def search_authors(
         query = query.filter(works_count=f">{min_works_count}")
     
     if sort:
-        field, _, direction = sort.partition(":")
-        query = query.sort(**{field: direction or "desc"})
-    
+        query = apply_sort(query, sort)
+
     # Execute query
     results = query.select([
         "id", "display_name", "orcid", "works_count", "last_known_institutions"
@@ -225,21 +224,24 @@ async def get_author_articles(
 ) -> dict:
     """List all works by a given author."""
     api_id = normalize_id(author_id)
-    if api_id is None or (not api_id.startswith("A") and not api_id.startswith("orcid:")):
+    if api_id is None or (
+        not api_id.startswith("A")
+        and not api_id.startswith("orcid:")
+        and not api_id.startswith("scopus:")
+    ):
         raise ToolError(
             "INVALID_AUTHOR_ID",
-            f"'{author_id}' is not a valid author ID. Provide an OpenAlex ID (A…) or ORCID. "
+            f"'{author_id}' is not a valid author ID. Provide an OpenAlex ID (A…), ORCID, or Scopus ID. "
             "Use search_authors to find author IDs by name."
         )
     works_query = Works().filter(author=id_to_filter_dict(api_id))
 
     # Fetch articles
     if sort:
-        field, _, direction = sort.partition(":")
-        works_query = works_query.sort(**{field: direction or "desc"})
-    
+        works_query = apply_sort(works_query, sort)
+
     results = works_query.select([
-        "id", "doi", "title", "publication_year", "open_access"
+        "id", "doi", "title", "publication_year", "open_access", "authorships", "primary_topic"
     ]).get(page=page, per_page=limit)
     
     return {
@@ -271,9 +273,8 @@ async def search_institutions(
         query = query.filter(type=institution_type)
     
     if sort:
-        field, _, direction = sort.partition(":")
-        query = query.sort(**{field: direction or "desc"})
-    
+        query = apply_sort(query, sort)
+
     results = query.select([
         "id", "ror", "display_name", "country_code", "type", "works_count", "lineage"
     ]).get(page=page, per_page=limit)
