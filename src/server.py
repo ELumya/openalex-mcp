@@ -40,7 +40,7 @@ pyalex.config.retry_http_codes = [429, 500, 503]
 # Initialize FastMCP server
 mcp = FastMCP(
     name="openalex",
-    instructions="""OpenAlex scholarly database. Search and fetch works, authors, and institutions.""",
+    instructions="""Search and fetch works, authors, and institutions.""",
     version="0.1.0"
 )
 
@@ -106,28 +106,18 @@ async def fetch_article(
     if api_id is None:
         raise ToolError("INVALID_WORK_ID", f"'{work_id}' is not a recognised work ID. Provide an OpenAlex ID (W…), DOI, pmid:, pmcid:, or mag:.")
     work = Works()[api_id]
-    
-    result = {
-        "id": work["id"],
-        "doi": work.get("doi"),
-        "title": work["title"],
-        "publication_year": work.get("publication_year"),
-        "type": work.get("type"),
-        "is_paratext": work.get("is_paratext"),
-        "authorships": work.get("authorships", []),
-        "primary_location": work.get("primary_location"),
-        "open_access": work.get("open_access")
-    }
-    
+
+    result = format_work_result(work, detail="medium")
+
     if include_abstract:
         result["abstract"] = work.get("abstract")
-    
+
     if fulltext:
         if not work.get("open_access", {}).get("is_oa", False):
             result["fulltext"] = {"is_open_access": False}
         else:
             result["fulltext"] = await _process_fulltext(work, prompt, ctx)
-    
+
     return result
 
 
@@ -307,7 +297,7 @@ async def fetch_author(
     if api_id is None:
         raise ToolError("INVALID_AUTHOR_ID", f"'{author_id}' is not a recognised author ID. Provide an OpenAlex ID (A…) or ORCID.")
     author = Authors()[api_id]
-    return format_author_result(author)
+    return format_author_result(author, detail="medium")
 
 
 # FETCH INSTITUTION TOOL
@@ -321,7 +311,7 @@ async def fetch_institution(
     if api_id is None:
         raise ToolError("INVALID_INSTITUTION_ID", f"'{institution_id}' is not a recognised institution ID. Provide an OpenAlex ID (I…) or ROR.")
     institution = Institutions()[api_id]
-    return format_institution_result(institution)
+    return format_institution_result(institution, detail="medium")
 
 
 # MAIN

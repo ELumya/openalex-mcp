@@ -3,8 +3,12 @@
 This module provides functions to:
 - Build filtered queries for Works, Authors, and Institutions
 - Apply institution and affiliation filters
-- Format API responses consistently
+- Format API responses consistently at two detail levels:
+    low, compact, suitable for search result lists
+    medium, richer, used by fetch_* tools (full object already downloaded)
 """
+
+from typing import Literal
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
@@ -12,6 +16,17 @@ from pyalex import Works, Authors, Institutions
 from .normalizers import normalize_id, id_to_filter_dict
 from .institution import resolve_institution_id
 from .author import resolve_author_id
+
+
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+def _format_topic(topic: dict) -> dict:
+    """Serialize a topic object to {id, name, subfield}."""
+    return {
+        "id": topic.get("id"),
+        "name": topic.get("display_name"),
+        "subfield": (topic.get("subfield") or {}).get("display_name"),
+    }
 
 
 async def apply_institution_filter(
@@ -131,13 +146,20 @@ async def build_works_query(
     return query
 
 
-def format_work_result(work: dict) -> dict:
-    """Format a work result with consistent open_access handling."""
+def format_work_result(work: dict, detail: Literal["low", "medium"] = "low") -> dict:
+    """Format a work result.
+
+    Args:
+        work: Raw work dict from pyalex.
+        detail: ``"low"`` (compact, for search lists) or ``"medium"`` (richer,
+                for single-entity fetches).  Abstract and fulltext are always
+                handled separately by the caller.
+    """
     result = {
         "id": work.get("id"),
         "doi": work.get("doi"),
         "title": work.get("title"),
-        "publication_year": work.get("publication_year")
+        "publication_year": work.get("publication_year"),
     }
 
     # Standardized open_access format
@@ -147,35 +169,97 @@ def format_work_result(work: dict) -> dict:
     else:
         result["is_open_access"] = False
 
-    # Include primary topic if available
-    if "primary_topic" in work:
-        result["primary_topic"] = {
-            "id": work["primary_topic"].get("id"),
-            "name": work["primary_topic"].get("display_name")
-        }
-
-    # Include 3 first authors if available
-    authorships = work.get("authorships", [])
-    if authorships:
-        result["authors"] = [
-            {
-                "id": authorship.get("author", {}).get("id"),
-                "display_name": authorship.get("author", {}).get("display_name")
+    if detail == "low":
+        # Primary topic
+        if "primary_topic" in work and work["primary_topic"]:
+            result["primary_topic"] = {
+                "id": work["primary_topic"].get("id"),
+                "name": work["primary_topic"].get("display_name"),
             }
-            for authorship in authorships[:3]
-        ]
+
+        # First 3 authors, id + name only
+        authorships = work.get("authorships") or []
+        if authorships:
+            result["authors"] = [
+                {
+                    "id": a.get("author", {}).get("id"),
+                    "display_name": a.get("author", {}).get("display_name"),
+                }
+                for a in authorships[:3]
+            ]
+
+    else:  # medium
+        result["type"] = work.get("type")
+
+        # Citation metrics
+        result["cited_by_count"] = work.get("cited_by_count")
+        fwci = work.get("fwci")
+        if fwci is not None:
+            result["fwci"] = round(fwci, 3)
+        cnp = work.get("citation_normalized_percentile") or {}
+        if cnp:
+            result["citation_percentile"] = {
+                "is_in_top_1_percent": cnp.get("is_in_top_1_percent"),
+                "is_in_top_10_percent": cnp.get("is_in_top_10_percent"),
+            }
+
+        # Bibliographic details
+        result["biblio"] = work.get("biblio")
+
+        # Source / venue from primary_location
+        primary_location = work.get("primary_location") or {}
+        source = primary_location.get("source") or {}
+        if source:
+            result["source"] = {
+                "display_name": source.get("display_name"),
+                "type": source.get("type"),
+                "is_oa": source.get("is_oa"),
+            }
+        license_ = primary_location.get("license")
+        if license_:
+            result["license"] = license_
+
+        # Topics list (replaces single primary_topic in medium)
+        topics = work.get("topics") or []
+        if topics:
+            result["topics"] = [_format_topic(t) for t in topics[:3]]
+
+        # Full author list with their institutions
+        authorships = work.get("authorships") or []
+        if authorships:
+            result["authors"] = [
+                {
+                    "id": a.get("author", {}).get("id"),
+                    "display_name": a.get("author", {}).get("display_name"),
+                    "author_position": a.get("author_position"),
+                    "is_corresponding": a.get("is_corresponding"),
+                    "institutions": [
+                        {
+                            "display_name": inst.get("display_name"),
+                            "id": inst.get("ror") or inst.get("id"),
+                        }
+                        for inst in (a.get("institutions") or [])
+                    ],
+                }
+                for a in authorships
+            ]
 
     return result
 
 
-def format_institution_result(inst: dict) -> dict:
-    """Format an institution result with consistent structure."""
+def format_institution_result(inst: dict, detail: Literal["low", "medium"] = "low") -> dict:
+    """Format an institution result.
+
+    Args:
+        inst: Raw institution dict from pyalex.
+        detail: ``"low"`` (compact) or ``"medium"`` (richer, for fetch_institution).
+    """
     result = {
         "id": inst.get("ror") or inst.get("id"),
         "display_name": inst.get("display_name"),
         "country_code": inst.get("country_code"),
         "type": inst.get("type"),
-        "works_count": inst.get("works_count")
+        "works_count": inst.get("works_count"),
     }
 
     # Include parent institutions (lineage) if available
@@ -183,25 +267,89 @@ def format_institution_result(inst: dict) -> dict:
     if len(lineage) > 1:
         result["parent_institutions"] = lineage[:-1]  # Exclude self from lineage
 
+    if detail == "medium":
+        result["cited_by_count"] = inst.get("cited_by_count")
+
+        summary = inst.get("summary_stats", {})
+        if summary:
+            result["summary_stats"] = {
+                "h_index": summary.get("h_index"),
+                "i10_index": summary.get("i10_index"),
+            }
+
+        topics = inst.get("topics", [])
+        if topics:
+            result["topics"] = [_format_topic(t) for t in topics[:5]]
+
+        geo = inst.get("geo", {})
+        if geo:
+            result["geo"] = {
+                "city": geo.get("city"),
+                "region": geo.get("region"),
+                "country": geo.get("country"),
+                "latitude": geo.get("latitude"),
+                "longitude": geo.get("longitude"),
+            }
+
+        homepage = inst.get("homepage_url")
+        if homepage:
+            result["homepage_url"] = homepage
+
     return result
 
 
-def format_author_result(author: dict) -> dict:
-    """Format an author result with consistent structure."""
+def format_author_result(author: dict, detail: Literal["low", "medium"] = "low") -> dict:
+    """Format an author result.
+
+    Args:
+        author: Raw author dict from pyalex.
+        detail: ``"low"`` (compact) or ``"medium"`` (richer, for fetch_author).
+    """
     result = {
         "id": author.get("id"),
         "display_name": author.get("display_name"),
         "orcid": author.get("orcid"),
-        "works_count": author.get("works_count")
+        "works_count": author.get("works_count"),
     }
 
-    # Format institutions consistently
+    # Last known institutions, always included at low detail
     institutions = author.get("last_known_institutions", [])
-    if institutions:
-        result["last_known_institutions"] = [
-            format_institution_result(inst) for inst in institutions
-        ]
-    else:
-        result["last_known_institutions"] = []
+    result["last_known_institutions"] = [
+        format_institution_result(inst) for inst in institutions
+    ]
+
+    if detail == "medium":
+        result["cited_by_count"] = author.get("cited_by_count")
+
+        summary = author.get("summary_stats", {})
+        if summary:
+            result["summary_stats"] = {
+                "h_index": summary.get("h_index"),
+                "i10_index": summary.get("i10_index"),
+                "2yr_mean_citedness": summary.get("2yr_mean_citedness"),
+            }
+
+        topics = author.get("topics", [])
+        if topics:
+            result["topics"] = [_format_topic(t) for t in topics[:3]]
+
+        # Affiliation history sorted by most recent year first
+        affiliations = author.get("affiliations", [])
+        if affiliations:
+            result["affiliations"] = sorted(
+                [
+                    {
+                        "institution": {
+                            "display_name": (aff.get("institution", {})).get("display_name"),
+                            "id": (aff.get("institution", {})).get("ror")
+                                  or (aff.get("institution", {})).get("id"),
+                        },
+                        "years": sorted(aff.get("years", []), reverse=True),
+                    }
+                    for aff in affiliations
+                ],
+                key=lambda x: x["years"][0] if x["years"] else 0,
+                reverse=True,
+            )
 
     return result
