@@ -24,8 +24,7 @@ flowchart TD
         subgraph Utils["utils/"]
             NORM[normalizers.py\nID parsing & canonicalisation]
             FILT[filters.py\nQuery building & formatting]
-            AUTH[author.py\nAuthor resolution]
-            INST[institution.py\nInstitution resolution]
+            RES[resolver.py\nEntity resolution & disambiguation]
         end
     end
 
@@ -38,10 +37,8 @@ flowchart TD
     SRV --> Tools
     Tools --> NORM
     Tools --> FILT
-    FILT --> AUTH
-    FILT --> INST
-    AUTH --> NORM
-    INST --> NORM
+    FILT --> RES
+    RES --> NORM
     Utils -->|pyalex| OALEX
     T2 -->|"pyalex + MarkItDown"| PDF
     SRV -.->|"LLM sampling (ctx.sample)"| LLM
@@ -54,16 +51,13 @@ flowchart LR
     server["src/server.py"]
     filters["utils/filters.py"]
     norm["utils/normalizers.py"]
-    author["utils/author.py"]
-    institution["utils/institution.py"]
+    resolver["utils/resolver.py"]
 
     server --> norm
     server --> filters
     filters --> norm
-    filters --> author
-    filters --> institution
-    author --> norm
-    institution --> norm
+    filters --> resolver
+    resolver --> norm
 ```
 
 ## search_articles Flow
@@ -75,7 +69,7 @@ sequenceDiagram
     participant MCP as server.py (FastMCP)
     participant Filters as filters.py
     participant Norm as normalizers.py
-    participant Inst as institution.py
+    participant Res as resolver.py
     participant OA as api.openalex.org
 
     User->>Agent: request mentioning an institution by name
@@ -86,16 +80,16 @@ sequenceDiagram
         Filters->>Norm: normalize_id(institution)
         alt ID not recognized (free-text name)
             Norm-->>Filters: None
-            Filters->>Inst: resolve_institution_id(name, ctx)
-            Inst->>OA: Institutions().search(name)
-            OA-->>Inst: candidates
+            Filters->>Res: resolve_institution_id(name, ctx)
+            Res->>OA: Institutions().search(name)
+            OA-->>Res: candidates
             opt multiple matches
-                Inst->>MCP: ctx.elicit(pick one)
+                Res->>MCP: ctx.elicit(pick one)
                 MCP-->>User: elicitation prompt (via MCP client)
                 User-->>MCP: selected institution
-                MCP-->>Inst: user selection
+                MCP-->>Res: user selection
             end
-            Inst-->>Filters: OpenAlex I-ID
+            Res-->>Filters: OpenAlex I-ID
         end
         Filters->>Filters: query.filter(authorships.institutions)
     end
