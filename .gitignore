@@ -13,4 +13,12 @@ wheels/
 .env
 
 # UV files
+<<<<<<< HEAD
 uv.lock
+=======
+uv.lock
+
+# LLM files
+.llms
+.github/copilot-instructions.md
+>>>>>>> local-dev
