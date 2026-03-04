@@ -60,12 +60,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system overview, module dependency gr
 - [ ] Add tests
 - [ ] Add CI/CD
 - [ ] Use cache for high rate requests
-- [ ] Scan code base for dead code
+- [x] Scan code base for dead code
 - [x] Add mermaid documentation
-
-### Skills & Docs
-
-- [x] Write [SKILL.md](SKILL.md) — FastMCP error handling patterns, elicitation, external IDs conventions
+- [ ] Unify concepts names (ie. Articles/Works)
+- [x] Two levels of formating details in `filter`: low (current one), medium (for `fetch_*` tools)
 
 ### Tools Evolutions
 
@@ -95,13 +93,11 @@ in [_process_fulltext](C:\Users\Lumya\Documents\Travail\CEA - alternace\Projet\m
 
 ### Authors
 
-- [ ] fetch author not returning enough data
 - [x] get_author_articles: parameter `author` replaced by `author_id`; accepts only OpenAlex ID or ORCID.
 - [ ] graph_collaborations
 
 ### Institutions
 
-- [ ] fetch institution not returning enough data (same as when searching)
 - [ ] graph_colaborations
 
 ### Global analysis tools
