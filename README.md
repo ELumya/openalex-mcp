@@ -72,7 +72,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system overview, module dependency gr
 - [x] Update tools descriptions, do not explain how it works but what you need to pass.
 - [x] Update Author search tool, remove IDs handling (use `fetch_author` for this)
 
-in [format_work_result](C:\Users\Lumya\Documents\Travail\CEA - alternace\Projet\mcp-openalex\src\utils\filters.py:163) add:  
+in [format_work_result](.\src\utils\filters.py:163) add:  
 
 - [x] first 3 Authors
 - [x] Primary topic classification
