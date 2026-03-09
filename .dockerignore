@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.git/
+.gitignore
+helm/
+.llms/
+README.md
+ARCHITECTURE.md
