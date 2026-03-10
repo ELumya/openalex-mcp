@@ -139,10 +139,6 @@ async def _process_fulltext(work, prompt: str | None, ctx: Context) -> dict | st
         # LLM summary
         await ctx.report_progress(70, 100, "Preparing LLM analysis")
         
-        content_preview = article_text[:10000]
-        if len(article_text) > 10000:
-            content_preview += "\n\n[... article truncated for token efficiency ...]"
-        
         llm_message = f"""You are analyzing this research article:
 
 # Metadata
@@ -153,7 +149,7 @@ async def _process_fulltext(work, prompt: str | None, ctx: Context) -> dict | st
 {work.get('abstract', 'No abstract available')}
 
 # Full Article
-{content_preview}
+{article_text}
 
 TASK: {prompt}
 

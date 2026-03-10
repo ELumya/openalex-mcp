@@ -77,7 +77,7 @@ in [format_work_result](.\src\utils\filters.py:163) add:
 - [x] first 3 Authors
 - [x] Primary topic classification
 
-in [_process_fulltext](C:\Users\Lumya\Documents\Travail\CEA - alternace\Projet\mcp-openalex\src\server.py:174) in `fetch_article`
+in [_process_fulltext](.\src\server.py:174) in `fetch_article`
 
 - [x] Remove pure PDF handling, auto-detect format based on prompt presence (if prompt provided → LLM summary, else → markdown)
 - [ ] Use proper sampling parameters (deferred)
