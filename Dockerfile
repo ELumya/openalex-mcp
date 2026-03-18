@@ -7,10 +7,9 @@ WORKDIR /app
 
 # Copy dependency files first for layer caching
 COPY pyproject.toml ./
-COPY uv.lock* ./
 
 # Install dependencies (no dev deps, no editable install)
-RUN uv sync --no-dev --frozen
+RUN uv sync --no-dev
 
 # Copy source
 COPY src/ ./src/
@@ -22,4 +21,4 @@ ENV MCP_TRANSPORT=http \
 
 EXPOSE 8000
 
-CMD ["uv", "run", "fastmcp", "run", "src/server.py"]
+CMD ["uv", "run", "python", "src/server.py"]

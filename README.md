@@ -86,6 +86,7 @@ in [_process_fulltext](.\src\server.py:174) in `fetch_work`
 
 - [ ] Search by topics
 - [ ] Search foundational works
+- [ ] Semantic search
 
 ### Citation
 

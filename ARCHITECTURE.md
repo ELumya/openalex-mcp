@@ -2,47 +2,95 @@
 
 ## System Overview
 
+`mcp-openalex` is a FastMCP server that exposes OpenAlex data as structured, agent-friendly tools.
+It supports two MCP transports (`stdio` and `http`), validates and normalizes identifiers,
+builds OpenAlex queries, and optionally enriches article retrieval with PDF-to-markdown conversion
+or LLM post-processing.
+
+### Architecture at a Glance
+
 ```mermaid
 flowchart TD
-    subgraph Client["MCP Client (AI Agent)"]
-        LLM[AI Agent / LLM Host]
+    subgraph Client["MCP Client"]
+        Agent["AI Agent / MCP Host"]
     end
 
-    subgraph Server["mcp-openalex  ·  FastMCP Server"]
-        SRV["server.py\n(FastMCP + middleware)"]
+    subgraph Runtime["mcp-openalex (FastMCP Runtime)"]
+        Entry["src/server.py\nTransport + Tool Registration"]
+        MW["Middleware\nErrorHandling + Retry"]
 
-        subgraph Tools["MCP Tools"]
-            T1[search_works]
-            T2[fetch_work]
-            T3[search_authors]
-            T4[fetch_author]
-            T5[get_author_works]
-            T6[search_institutions]
-            T7[fetch_institution]
+        subgraph APIs["Tool Surface"]
+            TW["search_works / fetch_work"]
+            TA["search_authors / fetch_author / get_author_works"]
+            TI["search_institutions / fetch_institution"]
         end
 
-        subgraph Utils["utils/"]
-            NORM[normalizers.py\nID parsing & canonicalisation]
-            FILT[filters.py\nQuery building & formatting]
-            RES[resolver.py\nEntity resolution & disambiguation]
+        subgraph Domain["Domain Helpers (src/utils)"]
+            NORM["normalizers.py\nID parsing + canonical IDs"]
+            FILT["filters.py\nquery builders + output formatting"]
+            RES["resolver.py\nname to ID disambiguation"]
+        end
+
+        subgraph Integrations["Optional Content Processing"]
+            MD["MarkItDown\nPDF to markdown"]
+            Sample["ctx.sample()\nLLM summarization"]
         end
     end
 
-    subgraph Ext["External Services (OpenAlex)"]
-        OALEX[(api.openalex.org)]
-        PDF[(content.openalex.org)]
+    subgraph OpenAlex["External Services"]
+        API[(api.openalex.org)]
+        Content[(content.openalex.org)]
     end
 
-    LLM -->|"MCP (stdio / HTTP)"| SRV
-    SRV --> Tools
-    Tools --> NORM
-    Tools --> FILT
+    Agent -->|"MCP (stdio or HTTP)"| Entry
+    Entry --> MW
+    MW --> APIs
+
+    APIs --> NORM
+    APIs --> FILT
     FILT --> RES
     RES --> NORM
-    Utils -->|pyalex| OALEX
-    T2 -->|"pyalex + MarkItDown"| PDF
-    SRV -.->|"LLM sampling (ctx.sample)"| LLM
+
+    APIs -->|"pyalex"| API
+    TW -->|"open-access full text"| Content
+    Content --> MD
+    MD --> Sample
+    Sample -.->|"summary response"| Agent
 ```
+
+### Request Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant FastMCP as server.py
+    participant Utils as utils/*
+    participant OpenAlex as OpenAlex APIs
+    participant Optional as PDF + LLM path
+
+    Client->>FastMCP: Tool call (e.g. search_works / fetch_work)
+    FastMCP->>FastMCP: Validate params + apply middleware
+    FastMCP->>Utils: Normalize IDs, build filters, resolve names
+    Utils->>OpenAlex: Execute pyalex request
+    OpenAlex-->>FastMCP: Metadata payload
+
+    alt fulltext processing requested
+        FastMCP->>Optional: Download OA PDF + convert to markdown
+        opt prompt provided
+            Optional-->>FastMCP: LLM summary via ctx.sample()
+        end
+    end
+
+    FastMCP-->>Client: Structured JSON result for agent use
+```
+
+### Design Characteristics
+
+- **Transport-flexible:** same codebase runs as local `stdio` MCP server or networked `http` server.
+- **Agent-centric outputs:** tools return compact, structured dictionaries tailored for LLM consumption.
+- **Resilient calls:** middleware and pyalex retries reduce failures on transient OpenAlex/API issues.
+- **Progressive enrichment:** expensive operations (PDF extraction, LLM summarization) are only triggered when requested.
+- **Separation of concerns:** `server.py` orchestrates tools; `utils/` handles normalization, filtering, and disambiguation.
 
 ## Module Dependencies
 

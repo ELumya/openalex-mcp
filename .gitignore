@@ -52,16 +52,10 @@ uv.lock
 
 # Local AI/agent workspace files
 .llms/
-
-# LLM/Copilot local instruction & prompt files
-.github/copilot-instructions.local.md
-.github/instructions/**/*.local.instructions.md
-.github/prompts/**/*.local.prompt.md
-.github/chatmodes/**/*.local.chatmode.md
+.github/
 AGENTS.local.md
 CLAUDE.local.md
-.claude/CLAUDE.local.md
-.claude/rules/**/*.local.md
+.claude/
 
 # Editor / IDE
 .vscode/
