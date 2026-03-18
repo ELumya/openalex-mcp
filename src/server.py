@@ -1,6 +1,6 @@
 """MCP OpenAlex Server
 
-FastMCP server for OpenAlex scholarly data: search articles, authors, institutions, fetch detailed info.
+FastMCP server for OpenAlex scholarly data: search works, authors, institutions, fetch detailed info.
 Optimized for AI agent consumption.
 """
 
@@ -50,9 +50,9 @@ mcp.add_middleware(ErrorHandlingMiddleware(include_traceback=False, transform_er
 mcp.add_middleware(RetryMiddleware(max_retries=2, retry_exceptions=(ConnectionError, TimeoutError)))
 
 
-# ARTICLE SEARCH TOOL
+# WORK SEARCH TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
-async def search_articles(
+async def search_works(
     query_string: Annotated[str, Field(min_length=2, max_length=1000, description="Keywords or Elasticsearch query")],
     institution: Annotated[str | None, Field(description="Institution name or ID")] = None,
     publication_year: Annotated[int | None, Field(ge=1000, le=2100, description="Filter by year")] = None,
@@ -92,9 +92,9 @@ async def search_articles(
     }
 
 
-# FETCH ARTICLE TOOL
+# FETCH WORK TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
-async def fetch_article(
+async def fetch_work(
     work_id: Annotated[str, Field(min_length=1, description="OpenAlex W…, DOI, pmid:, pmcid:, or mag:")],
     include_abstract: Annotated[bool, Field()] = True,
     fulltext: Annotated[bool, Field(description="Fetch open-access PDF as markdown")] = False,
@@ -130,16 +130,16 @@ async def _process_fulltext(work, prompt: str | None, ctx: Context) -> dict | st
         
         await ctx.report_progress(60, 100, "Converting to markdown")
         md = MarkItDown()
-        article_text = md.convert_stream(io.BytesIO(pdf_bytes)).text_content
+        work_text = md.convert_stream(io.BytesIO(pdf_bytes)).text_content
         
         if not prompt:
             await ctx.report_progress(100, 100, "Conversion complete")
-            return article_text
+            return work_text
         
         # LLM summary
         await ctx.report_progress(70, 100, "Preparing LLM analysis")
         
-        llm_message = f"""You are analyzing this research article:
+        llm_message = f"""You are analyzing this research work:
 
 # Metadata
 - Title: {work['title']}
@@ -149,7 +149,7 @@ async def _process_fulltext(work, prompt: str | None, ctx: Context) -> dict | st
 {work.get('abstract', 'No abstract available')}
 
 # Full Article
-{article_text}
+{work_text}
 
 TASK: {prompt}
 
@@ -211,7 +211,7 @@ async def search_authors(
 
 
 @mcp.tool(annotations={"readOnlyHint": True})
-async def get_author_articles(
+async def get_author_works(
     author_id: Annotated[str, Field(min_length=1, description="OpenAlex A…, orcid:, scopus:, … — use search_authors to find")],
     limit: Annotated[int, Field(ge=1, le=200)] = 25,
     page: Annotated[int, Field(ge=1)] = 1,
@@ -232,7 +232,7 @@ async def get_author_articles(
         )
     works_query = Works().filter(author=id_to_filter_dict(api_id))
 
-    # Fetch articles
+    # Fetch works
     if sort:
         works_query = apply_sort(works_query, sort)
 

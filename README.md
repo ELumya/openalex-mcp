@@ -1,6 +1,6 @@
 # mcp-openalex
 
-MCP server for the [OpenAlex](https://openalex.org) scholarly database. Gives AI agents tools to search and retrieve academic articles, authors, and institutions.
+MCP server for the [OpenAlex](https://openalex.org) scholarly database. Gives AI agents tools to search and retrieve academic works, authors, and institutions.
 
 ## Requirements
 
@@ -43,11 +43,11 @@ MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=8000 uv run fastmcp run src/serve
 
 | Tool | Description |
 | ------ | ------------- |
-| `search_articles` | Search articles with filters (institution, year, date range, type, peer-reviewed) |
-| `fetch_article` | Fetch full article metadata by OpenAlex ID or DOI — optionally extract PDF or request an LLM summary |
+| `search_works` | Search works with filters (institution, year, date range, type, peer-reviewed) |
+| `fetch_work` | Fetch full work metadata by OpenAlex ID or DOI — optionally extract PDF or request an LLM summary |
 | `search_authors` | Search author profiles by name or ORCID |
 | `fetch_author` | Fetch full author profile by OpenAlex ID or ORCID |
-| `get_author_articles` | List all publications by a specific author |
+| `get_author_works` | List all publications by a specific author |
 | `search_institutions` | Search institutions by name, country, or type |
 | `fetch_institution` | Fetch full institution profile by OpenAlex ID or ROR |
 
@@ -62,7 +62,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system overview, module dependency gr
 - [ ] Use cache for high rate requests
 - [x] Scan code base for dead code
 - [x] Add mermaid documentation
-- [ ] Unify concepts names (ie. Articles/Works)
+- [x] Unify concepts names (ie. Articles/Works)
 - [x] Two levels of formating details in `filter`: low (current one), medium (for `fetch_*` tools)
 
 ### Tools Evolutions
@@ -77,7 +77,7 @@ in [format_work_result](.\src\utils\filters.py:163) add:
 - [x] first 3 Authors
 - [x] Primary topic classification
 
-in [_process_fulltext](.\src\server.py:174) in `fetch_article`
+in [_process_fulltext](.\src\server.py:174) in `fetch_work`
 
 - [x] Remove pure PDF handling, auto-detect format based on prompt presence (if prompt provided → LLM summary, else → markdown)
 - [ ] Use proper sampling parameters (deferred)
@@ -93,7 +93,7 @@ in [_process_fulltext](.\src\server.py:174) in `fetch_article`
 
 ### Authors
 
-- [x] get_author_articles: parameter `author` replaced by `author_id`; accepts only OpenAlex ID or ORCID.
+- [x] get_author_works: parameter `author` replaced by `author_id`; accepts only OpenAlex ID or ORCID.
 - [ ] graph_collaborations
 
 ### Institutions

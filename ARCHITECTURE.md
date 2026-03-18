@@ -12,11 +12,11 @@ flowchart TD
         SRV["server.py\n(FastMCP + middleware)"]
 
         subgraph Tools["MCP Tools"]
-            T1[search_articles]
-            T2[fetch_article]
+            T1[search_works]
+            T2[fetch_work]
             T3[search_authors]
             T4[fetch_author]
-            T5[get_author_articles]
+            T5[get_author_works]
             T6[search_institutions]
             T7[fetch_institution]
         end
@@ -60,7 +60,7 @@ flowchart LR
     resolver --> norm
 ```
 
-## search_articles Flow
+## search_works Flow
 
 ```mermaid
 sequenceDiagram
@@ -73,7 +73,7 @@ sequenceDiagram
     participant OA as api.openalex.org
 
     User->>Agent: request mentioning an institution by name
-    Agent->>MCP: search_articles(query, institution, ...)
+    Agent->>MCP: search_works(query, institution, ...)
     MCP->>Filters: build_works_query(...)
 
     opt institution filter provided
@@ -100,7 +100,7 @@ sequenceDiagram
     MCP-->>Agent: {results, count, page, per_page}
 ```
 
-## fetch_article with Full-Text Flow
+## fetch_work with Full-Text Flow
 
 ```mermaid
 sequenceDiagram
@@ -113,7 +113,7 @@ sequenceDiagram
     participant MD as MarkItDown
 
     User->>Agent: request
-    Agent->>MCP: fetch_article(work_id, fulltext=True, prompt?)
+    Agent->>MCP: fetch_work(work_id, fulltext=True, prompt?)
     MCP->>Norm: normalize_id(work_id)
     Norm-->>MCP: canonical ID (W…, doi:…, pmid:…)
     MCP->>OA: Works()[api_id]
@@ -131,7 +131,7 @@ sequenceDiagram
             Agent-->>MCP: LLM summary text
             MCP-->>Agent: {format: llm_summary, summary: ...}
         else no prompt
-            MCP-->>Agent: markdown article text
+            MCP-->>Agent: markdown work text
         end
     else not open-access
         MCP-->>Agent: {is_open_access: false}

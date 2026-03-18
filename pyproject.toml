@@ -1,7 +1,7 @@
 [project]
 name = "mcp-openalex"
 version = "0.1.0"
-description = "FastMCP server exposing OpenAlex scholarly database to AI agents — search articles, authors, and institutions."
+description = "FastMCP server exposing OpenAlex scholarly database to AI agents — search works, authors, and institutions."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Lumya"}]
