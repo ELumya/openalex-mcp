@@ -9,3 +9,5 @@ helm/
 .llms/
 README.md
 ARCHITECTURE.md
+
+.gitlab-ci.yml

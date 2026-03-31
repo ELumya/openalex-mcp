@@ -68,3 +68,6 @@ Thumbs.db
 
 # Helm
 helm/*
+
+# CI/CD
+.gitlab-ci.yml
