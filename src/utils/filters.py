@@ -97,7 +97,7 @@ async def build_works_query(
 
     Args:
         query_string: Search query string
-        search_range: Search scope ('title_abstract', 'title', 'abstract', 'general')
+        search_range: Search scope ('semantic', 'title_abstract', 'title', 'abstract', 'general')
         institution: Institution filter (name, ROR, or OpenAlex ID)
         publication_year: Publication year filter
         from_date: Start date filter (YYYY-MM-DD or YYYY)
@@ -115,14 +115,17 @@ async def build_works_query(
         ToolError: If author or institution not found
     """
     # Build base query based on search range
-    if search_range == "title_abstract":
-        query = Works().filter(**{"title_and_abstract.search": query_string})
-    elif search_range == "title":
-        query = Works().search_filter(title=query_string)
-    elif search_range == "abstract":
-        query = Works().search_filter(abstract=query_string)
-    else:
-        query = Works().search(query_string)
+    match search_range:
+        case "semantic":
+            query = Works().similar(query_string)
+        case "title_abstract":
+            query = Works().filter(**{"title_and_abstract.search": query_string})
+        case "title":
+            query = Works().search_filter(title=query_string)
+        case "abstract":
+            query = Works().search_filter(abstract=query_string)
+        case _:
+            query = Works().search(query_string)
 
     # Apply filters
     if peer_reviewed_only:

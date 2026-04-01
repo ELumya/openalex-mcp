@@ -92,6 +92,47 @@ async def search_works(
     }
 
 
+# SEMANTIC SEARCH TOOL
+@mcp.tool(annotations={"readOnlyHint": True})
+async def semantic_search_works(
+    query_string: Annotated[str, Field(min_length=2, max_length=1000, description="Natural language prompt for semantic search")],
+    institution: Annotated[str | None, Field(description="Institution name or ID")] = None,
+    publication_year: Annotated[int | None, Field(ge=1000, le=2100, description="Filter by year")] = None,
+    from_date: Annotated[str | None, Field(description="Start date (YYYY or YYYY-MM-DD)")] = None,
+    to_date: Annotated[str | None, Field(description="End date (YYYY or YYYY-MM-DD)")] = None,
+    type: Annotated[str | None, Field(description="article, review, proceedings-article, …")] = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 20,
+    page: Annotated[int, Field(ge=1)] = 1,
+    peer_reviewed_only: Annotated[bool, Field()] = False,
+    sort: Annotated[str | None, Field(description="field:asc|desc, e.g. publication_year:desc")] = None,
+    ctx: Context = CurrentContext()
+) -> dict:
+    """Find works similar to a given text using AI-powered semantic search. Searches by meaning rather than exact keyword match."""
+    query = await build_works_query(
+        query_string=query_string,
+        search_range="semantic",
+        institution=institution,
+        publication_year=publication_year,
+        from_date=from_date,
+        to_date=to_date,
+        type=type,
+        peer_reviewed_only=peer_reviewed_only,
+        sort=sort,
+        ctx=ctx
+    )
+    
+    results = query.select([
+        "id", "doi", "title", "publication_year", "open_access", "authorships", "primary_topic"
+    ]).get(page=page, per_page=limit)
+    
+    return {
+        "results": [format_work_result(work) for work in results],
+        "count": results.meta.get("count", 0),
+        "page": results.meta.get("page", 1),
+        "per_page": results.meta.get("per_page", limit)
+    }
+
+
 # FETCH WORK TOOL
 @mcp.tool(annotations={"readOnlyHint": True})
 async def fetch_work(

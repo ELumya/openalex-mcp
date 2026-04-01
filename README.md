@@ -44,6 +44,7 @@ MCP_TRANSPORT=http MCP_HOST=127.0.0.1 MCP_PORT=8000 uv run fastmcp run src/serve
 | Tool | Description |
 | ------ | ------------- |
 | `search_works` | Search works with filters (institution, year, date range, type, peer-reviewed) |
+| `semantic_search_works` | Find works similar to a text using AI semantic search (matches by meaning) |
 | `fetch_work` | Fetch full work metadata by OpenAlex ID or DOI — optionally extract PDF or request an LLM summary |
 | `search_authors` | Search author profiles by name or ORCID |
 | `fetch_author` | Fetch full author profile by OpenAlex ID or ORCID |
@@ -72,7 +73,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system overview, module dependency gr
 - [x] Update tools descriptions, do not explain how it works but what you need to pass.
 - [x] Update Author search tool, remove IDs handling (use `fetch_author` for this)
 
-in [format_work_result](.\src\utils\filters.py:163) add:  
+in [format_work_result](.\src\utils\filters.py:164) add:  
 
 - [x] first 3 Authors
 - [x] Primary topic classification
@@ -80,13 +81,13 @@ in [format_work_result](.\src\utils\filters.py:163) add:
 in [_process_fulltext](.\src\server.py:174) in `fetch_work`
 
 - [x] Remove pure PDF handling, auto-detect format based on prompt presence (if prompt provided → LLM summary, else → markdown)
-- [ ] Use proper sampling parameters (deferred)
+- [ ] Use proper sampling parameters
 
 ### Search
 
+- [x] Semantic search, *added as a new tool but can easily be integrated to work_search, we perform modifications at [filters](.\src\utils\filters.py:83) `build_works_query`*.
 - [ ] Search by topics
 - [ ] Search foundational works
-- [ ] Semantic search
 
 ### Citation
 
